@@ -1,0 +1,160 @@
+function onOpen()
+{
+  SpreadsheetApp.getUi()
+      .createMenu('Carrefour')
+      .addItem('Traitement', 'processMagasinsHyper')
+      .addToUi();
+}
+
+/* TOUT LES COMMENTAIRES SE TROUVANT ICI S'APPLIQUENT POUR TOUT LES AUTRES SCRIPT, SAUF INDICATION CONTRAIRE */
+
+function processMagasinsHyper()
+{
+  var ui = SpreadsheetApp.getUi(); //récupérer l'interface
+  var spread = SpreadsheetApp.getActiveSpreadsheet(); //récupère le spreadsheet présent
+  var parametre = spread.getSheetByName("Parametres"); //récupère le sheet paramètre
+  var range = parametre.getRange(1,2,1,parametre.getMaxColumns()).getValues(); //récupère la première colonne de paramètre et ses valeurs
+  ui.alert('Le traitement va commencer, ne touchez plus au Sheet.'); //averti l'usager que le traitement commence
+  for (var col = 0 ; col < range[0].length ; col++)
+  {
+    var sheet = spread.getSheetByName(range[0][col].toString())
+    if (!sheet){
+    ui.alert("ERREUR: Le sheet n'existe pas."); //mettre une erreur si le sheet n'existe pas
+      break;
+    }
+    else{
+      processMagasin(sheet, getColumnsMapping(sheet, col+1), range[0][col]) //éxécute ProcessMagasin et getColumnsMapping
+    }
+  }
+  fillDownDR();
+  ui.alert('Traitement terminé!'); //averti l'usager que le traitement est fini
+}
+
+function processMagasin(sheet, mapping, format)
+{
+  var ui = SpreadsheetApp.getUi();
+  var spread = SpreadsheetApp.getActiveSpreadsheet();
+  var magasins = spread.getSheetByName("Magasins");
+  var magasinsLastCol = magasins.getLastColumn()-2;
+  var magasinsLastRow = magasins.getLastRow(); //définit une première fois la dernière ligne du sheet
+  var magasinsLastRow2 = magasins.getLastRow(); //même chose une seconde fois
+  var magasinsRange = magasins.getRange(1, 1, magasinsLastRow, magasinsLastCol);
+  var magasinsValues = magasinsRange.getValues(); //récupère les valeurs du sheet
+  var magasinsBg = magasinsRange.getBackgrounds();
+  var sheetValues = sheet.getRange(3, 1, sheet.getLastRow() - 2, sheet.getLastColumn()).getValues(); //récupère toutes les valeurs du sheet à importer dans magasins, à partir de la 3e ligne
+  var idRange = magasins.getRange(1, 1, magasinsLastRow, 1);
+  var idRangeValues = idRange.getValues(); //récupère les id des lignes de la première colonne
+  var date = new Date(); //initialise la date
+  for (var r = 0 ; r<sheetValues.length ; r++) //créé une boucle qui lira les lignes du sheet à importer une par une jusqu'à ce que r soit supérieur à la hauteur du sheet
+  {
+    var rowOfId = findRowInRange(sheetValues[r][0], idRangeValues); //éxécute la fonction findRowInRange et stocke sa valeur
+    if (rowOfId == -1) //si il n'y a pas d'id identique à celui de la ligne du sheet analysée dans magasins:
+    {
+      var magasinsNewRow = [];
+      magasinsLastRow++;
+      magasinsNewRow.push(sheetValues[r][0].toString()); //place la valeur de l'id dans la colonne 0 du tableau
+      var magasinsNewRowBg = [];
+      magasinsNewRowBg.push("#ff9781"); //ajoute la couleur dans la colonne 0 du tableau
+      var x = 1;
+      while (x < magasinsValues[0].length) //tant que x n'est pas supérieur à la longueur du sheet:
+      {
+        magasinsNewRow.push("");
+        magasinsNewRowBg.push("");
+        x++;
+      }
+      for (var c=1 ; c<sheetValues[r].length ; c++) // créé une boucle qui va lire toutes les colonnes se trouvant dans la ligne r
+      {
+        if (mapping[c] != -1) //si la valeur d'indice c du mapping est différent de -1 (si il existe une colonne où se trouve le paramètre)
+        {
+          magasinsNewRow.splice(mapping[c], 1, sheetValues[r][c].toString()); //met la valeur du sheet dans le premier tableau, au rang du mapping
+          magasinsNewRowBg.splice(mapping[c], 1 , "#ff9781"); //met la couleur dans le deuxième tableau, au rang du mapping
+        }
+      }
+      magasinsNewRow.splice(3, 1, format.toString());
+      magasinsNewRow.splice(magasinsLastCol - 1, 1, date); //place la date dans la dernière colonne du premier tableau
+      magasinsValues.push(magasinsNewRow);
+      magasinsBg.push(magasinsNewRowBg);
+    }
+    else //si l'id est trouvée
+    {
+      magasinsBg[rowOfId][0] = "#ffffff"; //met le background de l'id en blanc
+      for (var c=0 ; c<sheetValues[r].length ; c++)
+      {
+        if (mapping[c] != -1)
+        {
+          if (magasinsValues[rowOfId][mapping[c]] != sheetValues[r][c]) //observe s'il y a une différence entre l'ancienne valeur et la nouvelle
+          {
+            magasinsValues[rowOfId][mapping[c]] = sheetValues[r][c]; //remplace la valeur
+            magasinsValues[rowOfId][magasinsLastCol-1] = date; //remplace la date
+            magasinsBg[rowOfId][mapping[c]] = "#ff9781"; //met le couleur de background en rouge
+          }
+          else
+          {
+            magasinsBg[rowOfId][mapping[c]] = "#ffffff"; //passe le background en blanc (car la valeur est identique)
+          }
+        }
+      }
+      if(magasinsValues[rowOfId][3] != format.toString()) //si le format change, remplace l'ancien format par le nouveau
+      {
+        magasinsValues[rowOfId][3] = format.toString();
+      }
+    }
+  }
+  for (var y = 0; y <=magasinsLastRow - magasinsLastRow2; y++) //ajoute autant de lignes dans le sheet qu'il y a de nouveaux magasins à ajouter
+  {
+    magasins.appendRow["new"];
+  }
+  var magasinsRange = magasins.getRange(1, 1, magasinsLastRow, magasinsLastCol); //rerécupère la range du début de fonction avec ses nouvelles dimensions
+  magasinsRange.setValues(magasinsValues);
+  magasinsRange.setBackgrounds(magasinsBg);
+}
+  
+
+function getColumnsMapping(sheet, col)
+{
+  var spread = SpreadsheetApp.getActiveSpreadsheet();
+  var parameters = spread.getSheetByName("Parametres");
+  var parametersValues = parameters.getRange(2,1,parameters.getLastRow()-1,parameters.getLastColumn()).getValues(); //récupère les valeurs du sheet paramètre
+  
+  var mapping = []; //créé un tableau qui va répértorier le mapping
+  var sheetColumns = sheet.getRange(2,1,1, sheet.getLastColumn()).getValues(); //récupère toutes les colonnes de la deuxième ligne du sheet instancié
+  for (var c = 0 ; c<sheetColumns[0].length ; c++) //créé une boucle  toutes les valeurs de la première ligne du sheet instancié
+  {
+    mapping[c] = -1; //la colonne c du mapping est égal à -1
+    for (var p = 0 ; p<parametersValues.length ; p++) //créé une boucle qui lira les lignes du sheet paramètre une par une jusqu'à ce que p soit supérieur à la hauteur du sheet
+    {
+      if (parametersValues[p][col] == sheetColumns[0][c]) //si la valeur se trouvant aux coordonnées du sheet parametre est égal à la valeur se trouvant aux coordonnées du sheet à importer
+      {
+        mapping[c] = p; //la valeur de la colonne c du mapping est égal à p
+      }
+    }
+  }
+  return mapping; //retourne le tableau mapping en fin de boucle
+}
+
+//search value in range and return array of position
+function findRowInRange(search, range)
+{
+  var row = -1; //instancie row à -1
+  for (var i=0 ; i<range.length ; i++) //créé une boucle allant de 0 jusqu'à la dernière valeur de la range d'id
+  {
+  if (range[i][0] == search) //si la valeur de la ligne i est égal à l'id recherché
+    {
+      row = i; //row prend la valeur i
+      return row; //retourne la valeur de row
+    }
+  }
+  return row; //retourne la valeur de row
+}
+
+function fillDownDR() //remplit les departements et regions dans le sheet
+{
+  var spread = SpreadsheetApp.getActiveSpreadsheet();
+  var magasins = spread.getSheetByName("Magasins");
+  var magasinsLastCol = magasins.getLastColumn();
+  var magasinsLastRow = magasins.getLastRow();
+  var rangeDep = magasins.getRange(2, magasinsLastCol-1, 1, 1).getFormulaR1C1(); //récupère la formule de l'avant-dernière case la deuxième ligne
+  magasins.getRange(2, magasinsLastCol-1, magasinsLastRow, 1).setFormulaR1C1(rangeDep); //l'applique sur toutes les lignes de l'vant dernière colonne
+  var rangeReg = magasins.getRange(2, magasinsLastCol, 1, 1).getFormulaR1C1(); //même chose sur dernière ligne
+  magasins.getRange(2, magasinsLastCol, magasinsLastRow, 1).setFormulaR1C1(rangeReg);
+}
